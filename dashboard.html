@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Amazon India Laptop Market Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f1efe8;
+    margin: 0;
+    padding: 24px;
+    color: #0b0b0b;
+  }
+  .dashboard {
+    max-width: 1100px;
+    margin: 0 auto;
+    background: #ffffff;
+    border: 1px solid #e1e0d9;
+    border-radius: 12px;
+    padding: 1.5rem;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 1.25rem;
+  }
+  .header h1 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 600;
+  }
+  .header p.sub {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: #6b6a66;
+  }
+  .controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .filt {
+    font-size: 13px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid #c3c2b7;
+    background: #ffffff;
+    cursor: pointer;
+    color: #52514e;
+  }
+  .filt.active {
+    background: #e6f1fb;
+    color: #0c447c;
+    border-color: #378add;
+    font-weight: 600;
+  }
+  .kpi {
+    background: #e6f1fb;
+    border-radius: 8px;
+    padding: 8px 18px;
+    text-align: center;
+  }
+  .kpi p { margin: 0; }
+  .kpi .label { font-size: 11px; color: #185fa5; }
+  .kpi .value { font-size: 18px; font-weight: 600; color: #0c447c; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  @media (max-width: 800px) {
+    .grid { grid-template-columns: 1fr; }
+  }
+  .panel {
+    background: #fafaf8;
+    border: 1px solid #e1e0d9;
+    border-radius: 8px;
+    padding: 12px;
+  }
+  .ptitle {
+    font-size: 12px;
+    color: #6b6a66;
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+  .chart-wrap { position: relative; height: 180px; }
+
+  #snapshot table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  #snapshot td { padding: 5px 0; border-bottom: 1px solid #e1e0d9; color: #52514e; }
+  #snapshot td:last-child { text-align: right; color: #0b0b0b; font-weight: 600; }
+  footer {
+    text-align: center;
+    font-size: 12px;
+    color: #898781;
+    margin-top: 16px;
+  }
+</style>
+</head>
+<body>
+
+<div class="dashboard">
+  <div class="header">
+    <div>
+      <h1>Amazon India laptop market dashboard</h1>
+      <p class="sub" id="subtitle">160 listings &middot; 12 brands</p>
+    </div>
+    <div class="controls">
+      <button class="filt active" data-seg="all">All</button>
+      <button class="filt" data-seg="Budget (&lt;30k)">Budget</button>
+      <button class="filt" data-seg="Mid-range (30k-60k)">Mid</button>
+      <button class="filt" data-seg="Premium (60k-100k)">Premium</button>
+      <button class="filt" data-seg="High-end (100k+)">High-end</button>
+      <div class="kpi">
+        <p class="label">Avg price</p>
+        <p class="value" id="kpi-price">&#8377;0</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <p class="ptitle">Avg price by brand</p>
+      <div class="chart-wrap"><canvas id="c1" role="img" aria-label="Bar chart of average price by brand"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <p class="ptitle">Listings by brand</p>
+      <div class="chart-wrap"><canvas id="c2" role="img" aria-label="Bar chart of listing count by brand"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <p class="ptitle">Price segment share</p>
+      <div class="chart-wrap"><canvas id="c3" role="img" aria-label="Doughnut chart of price segment share"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <p class="ptitle">Avg rating by brand</p>
+      <div class="chart-wrap"><canvas id="c4" role="img" aria-label="Bar chart of average rating by brand"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <p class="ptitle">Price vs rating</p>
+      <div class="chart-wrap"><canvas id="c5" role="img" aria-label="Scatter chart of price versus rating"></canvas></div>
+    </div>
+
+    <div class="panel">
+      <p class="ptitle">Top brands snapshot (by avg price)</p>
+      <div id="snapshot"></div>
+    </div>
+  </div>
+
+  <footer>Data source: Amazon India laptop listings (scraped via Selenium + BeautifulSoup) &middot; Built with Chart.js</footer>
+</div>
+
+<script>
+/* ============================================================
+   DATA
+   Replace this array with your own scraped + cleaned dataset.
+   Each row needs: price (number), rating (number 0-5), brand (string),
+   seg (price bucket string).
+   You can generate this array directly from clean_laptops.csv with:
+
+   python3 -c "
+   import pandas as pd, json
+   df = pd.read_csv('clean_laptops.csv')
+   df = df.rename(columns={'price_bucket':'seg'})
+   print(json.dumps(df[['price','rating','brand','seg']].dropna(subset=['rating']).to_dict('records')))
+   "
+   ============================================================ */
+const raw = [{"price": 34506, "rating": 3.2, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 35905, "rating": 4.1, "brand": "Dell", "seg": "Mid-range (30k-60k)"}, {"price": 54309, "rating": 4.4, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 40094, "rating": 3.2, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 66671, "rating": 4.0, "brand": "Dell", "seg": "Premium (60k-100k)"}, {"price": 79400, "rating": 3.1, "brand": "Dell", "seg": "Premium (60k-100k)"}, {"price": 73823, "rating": 3.7, "brand": "Acer", "seg": "Premium (60k-100k)"}, {"price": 178593, "rating": 3.3, "brand": "Apple", "seg": "High-end (100k+)"}, {"price": 98000, "rating": 4.5, "brand": "Lenovo", "seg": "Premium (60k-100k)"}, {"price": 62093, "rating": 4.1, "brand": "Asus", "seg": "Premium (60k-100k)"}, {"price": 87142, "rating": 4.4, "brand": "Asus", "seg": "Premium (60k-100k)"}, {"price": 76350, "rating": 3.3, "brand": "Acer", "seg": "Premium (60k-100k)"}, {"price": 52969, "rating": 3.1, "brand": "Dell", "seg": "Mid-range (30k-60k)"}, {"price": 46146, "rating": 3.9, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 32244, "rating": 4.2, "brand": "Infinix", "seg": "Mid-range (30k-60k)"}, {"price": 159545, "rating": 3.0, "brand": "Apple", "seg": "High-end (100k+)"}, {"price": 34322, "rating": 3.1, "brand": "Acer", "seg": "Mid-range (30k-60k)"}, {"price": 46643, "rating": 3.8, "brand": "Lenovo", "seg": "Mid-range (30k-60k)"}, {"price": 33004, "rating": 4.0, "brand": "Infinix", "seg": "Mid-range (30k-60k)"}, {"price": 29757, "rating": 3.4, "brand": "Asus", "seg": "Budget (<30k)"}, {"price": 97678, "rating": 4.1, "brand": "Asus", "seg": "Premium (60k-100k)"}, {"price": 39363, "rating": 3.8, "brand": "Asus", "seg": "Mid-range (30k-60k)"}, {"price": 48193, "rating": 3.2, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 82296, "rating": 4.7, "brand": "Asus", "seg": "Premium (60k-100k)"}, {"price": 130855, "rating": 4.8, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 53016, "rating": 3.3, "brand": "Lenovo", "seg": "Mid-range (30k-60k)"}, {"price": 110444, "rating": 4.5, "brand": "MSI", "seg": "High-end (100k+)"}, {"price": 32665, "rating": 4.4, "brand": "Lenovo", "seg": "Mid-range (30k-60k)"}, {"price": 48635, "rating": 4.6, "brand": "HP", "seg": "Mid-range (30k-60k)"}, {"price": 22964, "rating": 4.1, "brand": "Avita", "seg": "Budget (<30k)"}, {"price": 30562, "rating": 3.5, "brand": "Avita", "seg": "Mid-range (30k-60k)"}, {"price": 115039, "rating": 4.8, "brand": "Asus", "seg": "High-end (100k+)"}, {"price": 41104, "rating": 3.5, "brand": "HP", "seg": "Mid-range (30k-60k)"}, {"price": 52676, "rating": 3.6, "brand": "Dell", "seg": "Mid-range (30k-60k)"}, {"price": 41577, "rating": 3.2, "brand": "HP", "seg": "Mid-range (30k-60k)"}, {"price": 54819, "rating": 4.3, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 23512, "rating": 3.1, "brand": "Infinix", "seg": "Budget (<30k)"}, {"price": 82912, "rating": 3.0, "brand": "Lenovo", "seg": "Premium (60k-100k)"}, {"price": 47098, "rating": 3.2, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 178399, "rating": 4.5, "brand": "Apple", "seg": "High-end (100k+)"}, {"price": 43131, "rating": 3.2, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 105830, "rating": 3.4, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 34564, "rating": 3.5, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 169955, "rating": 4.8, "brand": "MSI", "seg": "High-end (100k+)"}, {"price": 73309, "rating": 4.2, "brand": "HP", "seg": "Premium (60k-100k)"}, {"price": 65386, "rating": 4.0, "brand": "Dell", "seg": "Premium (60k-100k)"}, {"price": 31146, "rating": 4.2, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 48382, "rating": 4.1, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 129593, "rating": 3.0, "brand": "MSI", "seg": "High-end (100k+)"}, {"price": 112813, "rating": 4.3, "brand": "Asus", "seg": "High-end (100k+)"}, {"price": 127561, "rating": 3.2, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 35053, "rating": 3.9, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 110328, "rating": 4.2, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 99889, "rating": 4.7, "brand": "Dell", "seg": "Premium (60k-100k)"}, {"price": 129616, "rating": 4.8, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 23607, "rating": 3.5, "brand": "Avita", "seg": "Budget (<30k)"}, {"price": 40268, "rating": 4.4, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 34561, "rating": 4.3, "brand": "Acer", "seg": "Mid-range (30k-60k)"}, {"price": 57560, "rating": 3.7, "brand": "MSI", "seg": "Mid-range (30k-60k)"}, {"price": 159545, "rating": 4.1, "brand": "Apple", "seg": "High-end (100k+)"}, {"price": 122928, "rating": 4.3, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 46622, "rating": 4.1, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 55819, "rating": 3.4, "brand": "Dell", "seg": "Mid-range (30k-60k)"}, {"price": 122065, "rating": 4.4, "brand": "Apple", "seg": "High-end (100k+)"}, {"price": 94276, "rating": 3.4, "brand": "Apple", "seg": "Premium (60k-100k)"}, {"price": 28758, "rating": 3.4, "brand": "Avita", "seg": "Budget (<30k)"}, {"price": 187032, "rating": 3.3, "brand": "Apple", "seg": "High-end (100k+)"}, {"price": 107470, "rating": 3.8, "brand": "Dell", "seg": "High-end (100k+)"}, {"price": 71529, "rating": 3.2, "brand": "Dell", "seg": "Premium (60k-100k)"}, {"price": 137571, "rating": 3.0, "brand": "Apple", "seg": "High-end (100k+)"}, {"price": 120258, "rating": 4.4, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 30707, "rating": 4.6, "brand": "Avita", "seg": "Mid-range (30k-60k)"}, {"price": 73674, "rating": 3.6, "brand": "Acer", "seg": "Premium (60k-100k)"}, {"price": 63655, "rating": 3.5, "brand": "Asus", "seg": "Premium (60k-100k)"}, {"price": 33797, "rating": 3.5, "brand": "Infinix", "seg": "Mid-range (30k-60k)"}, {"price": 31524, "rating": 3.5, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 132140, "rating": 3.5, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 42670, "rating": 4.3, "brand": "Asus", "seg": "Mid-range (30k-60k)"}, {"price": 104278, "rating": 3.5, "brand": "Asus", "seg": "High-end (100k+)"}, {"price": 50519, "rating": 3.2, "brand": "Asus", "seg": "Mid-range (30k-60k)"}, {"price": 44551, "rating": 3.2, "brand": "HP", "seg": "Mid-range (30k-60k)"}, {"price": 28216, "rating": 3.5, "brand": "Avita", "seg": "Budget (<30k)"}, {"price": 41710, "rating": 3.3, "brand": "Dell", "seg": "Mid-range (30k-60k)"}, {"price": 86548, "rating": 3.4, "brand": "Dell", "seg": "Premium (60k-100k)"}, {"price": 167743, "rating": 4.1, "brand": "MSI", "seg": "High-end (100k+)"}, {"price": 87142, "rating": 4.1, "brand": "Asus", "seg": "Premium (60k-100k)"}, {"price": 65056, "rating": 4.3, "brand": "HP", "seg": "Premium (60k-100k)"}, {"price": 38922, "rating": 3.5, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 109993, "rating": 3.5, "brand": "Dell", "seg": "High-end (100k+)"}, {"price": 125597, "rating": 4.1, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 35847, "rating": 4.6, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 42502, "rating": 4.2, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 89451, "rating": 3.8, "brand": "Lenovo", "seg": "Premium (60k-100k)"}, {"price": 36744, "rating": 4.8, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 102372, "rating": 4.6, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 33073, "rating": 3.9, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 45172, "rating": 4.3, "brand": "HP", "seg": "Mid-range (30k-60k)"}, {"price": 115482, "rating": 3.3, "brand": "MSI", "seg": "High-end (100k+)"}, {"price": 29736, "rating": 3.7, "brand": "Infinix", "seg": "Budget (<30k)"}, {"price": 48596, "rating": 3.5, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 88178, "rating": 3.9, "brand": "Acer", "seg": "Premium (60k-100k)"}, {"price": 25090, "rating": 3.7, "brand": "Infinix", "seg": "Budget (<30k)"}, {"price": 77968, "rating": 4.6, "brand": "HP", "seg": "Premium (60k-100k)"}, {"price": 137356, "rating": 4.6, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 24361, "rating": 3.3, "brand": "Infinix", "seg": "Budget (<30k)"}, {"price": 76098, "rating": 4.6, "brand": "Acer", "seg": "Premium (60k-100k)"}, {"price": 59705, "rating": 4.3, "brand": "MSI", "seg": "Mid-range (30k-60k)"}, {"price": 126663, "rating": 3.8, "brand": "Asus", "seg": "High-end (100k+)"}, {"price": 66452, "rating": 3.5, "brand": "HP", "seg": "Premium (60k-100k)"}, {"price": 22293, "rating": 4.3, "brand": "Avita", "seg": "Budget (<30k)"}, {"price": 31451, "rating": 3.0, "brand": "Avita", "seg": "Mid-range (30k-60k)"}, {"price": 81898, "rating": 3.6, "brand": "Acer", "seg": "Premium (60k-100k)"}, {"price": 41527, "rating": 3.2, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 26846, "rating": 3.8, "brand": "Avita", "seg": "Budget (<30k)"}, {"price": 29138, "rating": 4.5, "brand": "Avita", "seg": "Budget (<30k)"}, {"price": 24115, "rating": 4.4, "brand": "Avita", "seg": "Budget (<30k)"}, {"price": 42920, "rating": 4.4, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 50318, "rating": 4.8, "brand": "Acer", "seg": "Mid-range (30k-60k)"}, {"price": 29894, "rating": 4.7, "brand": "Infinix", "seg": "Budget (<30k)"}, {"price": 112089, "rating": 3.7, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 87609, "rating": 3.5, "brand": "HP", "seg": "Premium (60k-100k)"}, {"price": 33830, "rating": 4.8, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 28606, "rating": 3.8, "brand": "Avita", "seg": "Budget (<30k)"}, {"price": 43220, "rating": 3.3, "brand": "HP", "seg": "Mid-range (30k-60k)"}, {"price": 165983, "rating": 3.8, "brand": "Apple", "seg": "High-end (100k+)"}, {"price": 108566, "rating": 3.4, "brand": "Samsung", "seg": "High-end (100k+)"}, {"price": 79012, "rating": 4.8, "brand": "Dell", "seg": "Premium (60k-100k)"}, {"price": 38629, "rating": 3.2, "brand": "Dell", "seg": "Mid-range (30k-60k)"}, {"price": 60305, "rating": 4.5, "brand": "Dell", "seg": "Premium (60k-100k)"}, {"price": 56853, "rating": 4.6, "brand": "Acer", "seg": "Mid-range (30k-60k)"}, {"price": 46904, "rating": 3.2, "brand": "HP", "seg": "Mid-range (30k-60k)"}, {"price": 29344, "rating": 3.2, "brand": "Infinix", "seg": "Budget (<30k)"}, {"price": 129659, "rating": 3.6, "brand": "Asus", "seg": "High-end (100k+)"}, {"price": 42150, "rating": 3.1, "brand": "HP", "seg": "Mid-range (30k-60k)"}, {"price": 105540, "rating": 4.0, "brand": "Apple", "seg": "High-end (100k+)"}, {"price": 134354, "rating": 3.2, "brand": "MSI", "seg": "High-end (100k+)"}, {"price": 99424, "rating": 4.4, "brand": "MSI", "seg": "Premium (60k-100k)"}, {"price": 179989, "rating": 3.1, "brand": "MSI", "seg": "High-end (100k+)"}, {"price": 80843, "rating": 4.1, "brand": "Dell", "seg": "Premium (60k-100k)"}, {"price": 44313, "rating": 4.6, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 37579, "rating": 4.2, "brand": "Acer", "seg": "Mid-range (30k-60k)"}, {"price": 47058, "rating": 4.5, "brand": "Dell", "seg": "Mid-range (30k-60k)"}, {"price": 25477, "rating": 3.6, "brand": "Avita", "seg": "Budget (<30k)"}, {"price": 77531, "rating": 4.8, "brand": "Lenovo", "seg": "Premium (60k-100k)"}, {"price": 49865, "rating": 4.4, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 34522, "rating": 4.3, "brand": "HP", "seg": "Mid-range (30k-60k)"}, {"price": 24531, "rating": 3.8, "brand": "Avita", "seg": "Budget (<30k)"}, {"price": 35053, "rating": 4.1, "brand": "Realme", "seg": "Mid-range (30k-60k)"}, {"price": 127160, "rating": 3.0, "brand": "Asus", "seg": "High-end (100k+)"}, {"price": 55161, "rating": 4.5, "brand": "Lenovo", "seg": "Mid-range (30k-60k)"}, {"price": 115260, "rating": 4.1, "brand": "MSI", "seg": "High-end (100k+)"}, {"price": 46622, "rating": 4.5, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 38468, "rating": 4.0, "brand": "Mi", "seg": "Mid-range (30k-60k)"}, {"price": 46037, "rating": 4.0, "brand": "Acer", "seg": "Mid-range (30k-60k)"}];
+
+const blueRamp = ['#042c53','#0c447c','#185fa5','#378add','#85b7eb','#b5d4f4','#e6f1fb'];
+let charts = {};
+
+function aggregate(data) {
+  const byBrand = {};
+  data.forEach(d => {
+    byBrand[d.brand] = byBrand[d.brand] || { prices: [], ratings: [], count: 0 };
+    byBrand[d.brand].prices.push(d.price);
+    byBrand[d.brand].ratings.push(d.rating);
+    byBrand[d.brand].count++;
+  });
+  const segCounts = {};
+  data.forEach(d => { segCounts[d.seg] = (segCounts[d.seg] || 0) + 1; });
+  return { byBrand, segCounts };
+}
+
+function fmtINR(v) { return '\u20b9' + Math.round(v).toLocaleString('en-IN'); }
+
+function renderAll(data) {
+  const { byBrand, segCounts } = aggregate(data);
+  const brands = Object.keys(byBrand).sort((a, b) =>
+    (byBrand[b].prices.reduce((x, y) => x + y, 0) / byBrand[b].count) -
+    (byBrand[a].prices.reduce((x, y) => x + y, 0) / byBrand[a].count)
+  );
+
+  const avgPrice = brands.map(b => byBrand[b].prices.reduce((x, y) => x + y, 0) / byBrand[b].count);
+  const counts = brands.map(b => byBrand[b].count);
+  const avgRating = brands.map(b => byBrand[b].ratings.reduce((x, y) => x + y, 0) / byBrand[b].count);
+
+  const overallAvgPrice = data.length ? data.reduce((s, d) => s + d.price, 0) / data.length : 0;
+  document.getElementById('kpi-price').textContent = fmtINR(overallAvgPrice);
+  document.getElementById('subtitle').textContent = `${data.length} listings \u00b7 ${brands.length} brands`;
+
+  Object.values(charts).forEach(c => c.destroy());
+
+  charts.c1 = new Chart(document.getElementById('c1'), {
+    type: 'bar',
+    data: { labels: brands, datasets: [{ data: avgPrice, backgroundColor: brands.map((_, i) => blueRamp[Math.min(i, blueRamp.length - 1)]), borderRadius: 3, maxBarThickness: 14 }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: { duration: 600 },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmtINR(c.parsed.x) } } },
+      scales: { x: { ticks: { font: { size: 9 } }, grid: { display: false } }, y: { ticks: { font: { size: 9 } }, grid: { display: false } } } }
+  });
+
+  charts.c2 = new Chart(document.getElementById('c2'), {
+    type: 'bar',
+    data: { labels: brands, datasets: [{ data: counts, backgroundColor: '#378add', borderRadius: 3, maxBarThickness: 16 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 600 },
+      plugins: { legend: { display: false } },
+      scales: { x: { ticks: { font: { size: 8 }, maxRotation: 60 }, grid: { display: false } }, y: { ticks: { font: { size: 9 } }, grid: { color: '#e1e0d9' } } } }
+  });
+
+  const segLabels = Object.keys(segCounts);
+  charts.c3 = new Chart(document.getElementById('c3'), {
+    type: 'doughnut',
+    data: { labels: segLabels, datasets: [{ data: segLabels.map(s => segCounts[s]), backgroundColor: ['#85b7eb', '#378add', '#185fa5', '#042c53'], borderColor: '#fafaf8', borderWidth: 2 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: { animateRotate: true, duration: 700 },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 8, font: { size: 8 } } } } }
+  });
+
+  charts.c4 = new Chart(document.getElementById('c4'), {
+    type: 'bar',
+    data: { labels: brands, datasets: [{ data: avgRating, backgroundColor: '#0c447c', borderRadius: 3, maxBarThickness: 16 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 600 },
+      plugins: { legend: { display: false } },
+      scales: { x: { ticks: { font: { size: 8 }, maxRotation: 60 }, grid: { display: false } }, y: { min: 0, max: 5, ticks: { font: { size: 9 } }, grid: { color: '#e1e0d9' } } } }
+  });
+
+  charts.c5 = new Chart(document.getElementById('c5'), {
+    type: 'scatter',
+    data: { datasets: [{ data: data.map(d => ({ x: d.price, y: d.rating })), backgroundColor: '#185fa5', pointRadius: 3 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 500 },
+      plugins: { legend: { display: false } },
+      scales: { x: { ticks: { font: { size: 8 }, callback: (v) => '\u20b9' + (v / 1000) + 'k' }, grid: { color: '#e1e0d9' } }, y: { min: 2.8, max: 5, ticks: { font: { size: 9 } }, grid: { color: '#e1e0d9' } } } }
+  });
+
+  const top5 = brands.slice(0, 5);
+  document.getElementById('snapshot').innerHTML = '<table>' + top5.map((b, i) =>
+    `<tr><td>${b}</td><td>${fmtINR(avgPrice[i])}</td></tr>`
+  ).join('') + '</table>';
+}
+
+document.querySelectorAll('.filt').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filt').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const seg = btn.dataset.seg;
+    const filtered = seg === 'all' ? raw : raw.filter(d => d.seg === seg);
+    renderAll(filtered);
+  });
+});
+
+renderAll(raw);
+</script>
+</body>
+</html>
