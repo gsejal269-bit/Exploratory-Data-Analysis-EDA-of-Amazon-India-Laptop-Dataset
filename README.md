@@ -1,0 +1,2 @@
+# Exploratory-Data-Analysis-EDA-of-Amazon-India-Laptop-Dataset
+As part of my **CodeAlpha Data Analytics Internship – Task 2**, I performed an **Exploratory Data Analysis (EDA)** on the Amazon India Laptop dataset collected through web scraping. The primary objective of this project was to understand the structure of the dataset, clean and preprocess the data, and extract meaningful insights from laptop
